@@ -1,0 +1,120 @@
+//Generate IDE_ENV from the job name.
+def DEV_ENV = "${JOB_NAME}".split("_").first()
+
+
+//Enforce choice constraint on IDE_ENV:
+def VALID_ENVS = ["dev"]
+def ENV_IS_INVALID = !(IDE_ENV in VALID_ENVS)  // ! = not
+if (ENV_IS_INVALID) {
+        throw new Exception("""
+            Invalid environment: ${IDE_ENV} was derived from: ${JOB_NAME}
+            IDE_ENV must be one of: ${VALID_ENVS}""")
+}
+
+//Lots of bad things will happen if the constraint is not caught.
+
+
+
+pipeline {
+        agent {
+            label 'edge_node'
+        }
+
+
+        environment {
+            IDE_ENV = "${IDE_ENV}"
+
+
+
+            scheme = "${IDE_ENV}_evidencelabs"
+            TABLE_NAME = "details_recipe"
+            
+
+        // PATH VARIABLES
+
+
+        PIPELINE_LOGIN = credentials('dev-mkm-login')
+        DEV_USR = "${PIPELINE_LOGIN_USR}"
+        DEV_PASS = "${PIPELINE_LOGIN_PSW}"
+        ARTIFACTORY = "<file_path>"
+        MAX_ATTEMPTS = 3
+        SECONDS_TO_WAIT = 10
+        
+
+
+        CARBON = credentials('carbon-diu-pipeline')
+        CARBON_SERVER = "${env.CARBON_DB_SERVER}"
+        CARBON_DATABASE = "${env.CARBON_DB_DATABASE}"
+        CARBON_USER = "$CARBON_USR"
+        CARBON_PASSWORD = "$CARBON_PSW"
+
+
+        }
+        stages {
+            stage('virtual environment set up') {
+                steps {
+                    sh 'sh venv_setup.sh'
+                }
+
+            }
+
+
+        stage('Create Tables') {
+            steps {
+                sh '. venv/bin/activate ; export HTTPS_PROXY=${ACTIVATE_PROXY}; python HELLOFRESH/transformation/01_create_tables.py'                    }
+            }
+
+
+        stage('Extract from json and load to staging') {
+            steps {
+                sh '. venv/bin/activate ; export HTTPS_PROXY=${ACTIVATE_PROXY}; python HELLOFRESH/transformation/02_extract_data_load_staging.py'
+                }
+            }
+
+
+        stage('Insert from table to main table') {
+            steps {
+                sh '. venv/bin/activate ; export HTTPS_PROXY=${ACTIVATE_PROXY}; python HELLOFRESH/transformation/03_insert_main_table.py' 
+                }
+            }
+
+
+        stage('Drop Staging Table') {
+            steps {
+                sh '. venv/bin/sctivate ; export HTTPS_PROXY = ${ACTIVATE_PROXY}; python HELLOFRESH/transformation/04_delete_staging.py'
+                }
+            }
+
+        }
+
+
+        post {
+                failure {
+                    //Only send emails to everyone uat or prod
+                    scripts {
+                        if (IDE_ENV == 'dev') {
+                            //Modify here to become the dev author
+                            EMAIL = 'manoj.pythondeveloper065@gmail.com'
+                        } else {
+                            EMAIL = 'manojkmaharana@gmail.com'
+                        }
+                emailext        \
+                                subject:
+                "${JOB_NAME} - Build Failure!" ,
+                body:
+                "view latest build at ${BUILD_URL}" ,
+                recipientProviders:
+                [
+                    [$class: 'CulpritsRecipientProvider'],
+                    [$class: 'DevelopersRecipientProvider'],
+                    [$class: 'RequesterRecipientProvider']] ,
+
+                to:
+                "${EMAIL}"
+
+            }
+        }
+
+    }
+}
+ 
