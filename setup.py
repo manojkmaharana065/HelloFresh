@@ -9,6 +9,7 @@ author_email = 'manoj.pythondeveloper065@gmail.com.com'
 repo_name = 'template'
 
 
+
 setup(
     name=repo_name,
     version='1.0.0',
